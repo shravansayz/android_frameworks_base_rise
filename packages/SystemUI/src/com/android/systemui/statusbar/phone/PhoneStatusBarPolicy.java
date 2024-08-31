@@ -189,9 +189,10 @@ public class PhoneStatusBarPolicy
     private NfcAdapter mAdapter;
 
     private boolean mShowBluetoothBattery;
-    private boolean mHideBluetooth;
 
     private boolean mShowNetworkTraffic;
+
+    private TunerService mTunerService;
 
     @Inject
     public PhoneStatusBarPolicy(Context context, StatusBarIconController iconController,
@@ -211,7 +212,8 @@ public class PhoneStatusBarPolicy
             @Main SharedPreferences sharedPreferences, DateFormatUtil dateFormatUtil,
             RingerModeTracker ringerModeTracker,
             ConnectedDisplayInteractor connectedDisplayInteractor,
-            JavaAdapter javaAdapter
+            JavaAdapter javaAdapter,
+            TunerService tunerService
     ) {
         mContext = context;
         mIconController = iconController;
@@ -271,10 +273,7 @@ public class PhoneStatusBarPolicy
         mSharedPreferences = sharedPreferences;
         mDateFormatUtil = dateFormatUtil;
 
-        Dependency.get(TunerService.class).addTunable(this,
-                BLUETOOTH_SHOW_BATTERY,
-                NETWORK_TRAFFIC_LOCATION,
-                StatusBarIconController.ICON_HIDE_LIST);
+        mTunerService = tunerService;
     }
 
     /** Initialize the object after construction. */
@@ -306,6 +305,8 @@ public class PhoneStatusBarPolicy
         updateTTY();
 
         // bluetooth status
+        mShowBluetoothBattery = Settings.System.getIntForUser(mContext.getContentResolver(),
+            BLUETOOTH_SHOW_BATTERY, 1, UserHandle.USER_CURRENT) != 0;
         updateBluetooth();
 
         // Alarm clock
@@ -391,6 +392,9 @@ public class PhoneStatusBarPolicy
 
         mCommandQueue.addCallback(this);
 
+        mTunerService.addTunable(this, BLUETOOTH_SHOW_BATTERY);
+        mTunerService.addTunable(this, NETWORK_TRAFFIC_LOCATION);
+
         // Get initial user setup state
         onUserSetupChanged();
     }
@@ -423,14 +427,6 @@ public class PhoneStatusBarPolicy
                 mShowNetworkTraffic =
                         TunerService.parseInteger(newValue, 0) == 1;
                 updateNetworkTraffic();
-                break;
-            case StatusBarIconController.ICON_HIDE_LIST:
-                ArraySet<String> hideList = StatusBarIconController.getIconHideList(mContext, newValue);
-                boolean hideBluetooth = hideList.contains(mSlotBluetooth);
-                if (hideBluetooth != mHideBluetooth) {
-                    mHideBluetooth = hideBluetooth;
-                    updateBluetooth();
-                }
                 break;
             default:
                 break;
@@ -553,7 +549,7 @@ public class PhoneStatusBarPolicy
         }
 
         mIconController.setBluetoothIcon(mSlotBluetooth,
-                new BluetoothIconState(!mHideBluetooth && bluetoothVisible, batteryLevel, contentDescription));
+                new BluetoothIconState(bluetoothVisible, batteryLevel, contentDescription));
     }
 
     private final void updateNetworkTraffic() {

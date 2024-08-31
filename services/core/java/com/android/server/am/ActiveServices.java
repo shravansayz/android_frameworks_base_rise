@@ -5169,6 +5169,11 @@ public final class ActiveServices {
         } else {
             // Persistent processes are immediately restarted, so there is no
             // reason to hold of on restarting their services.
+            // Unless they were started with START_NOT_STICKY.
+            if (r.stopIfKilled) {
+                // Dont restart a persistent service if started with START_NOT_STICKY.
+                return false;
+            }
             r.totalRestartCount++;
             r.restartCount = 0;
             r.restartDelay = 0;
@@ -5711,10 +5716,6 @@ public final class ActiveServices {
                 Slog.w(TAG, msg);
                 bringDownServiceLocked(r, enqueueOomAdj);
                 return msg;
-            }
-            if ((r.appInfo.flags & ApplicationInfo.FLAG_PERSISTENT) != 0
-                    && !TextUtils.equals(procName, r.appInfo.processName)) {
-                app.setPersistent(true);
             }
             mAm.mProcessList.getAppStartInfoTracker().handleProcessServiceStart(startTimeNs, app, r,
                     true);

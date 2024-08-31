@@ -25,7 +25,6 @@ import android.hardware.security.keymint.HardwareAuthenticatorType;
 import android.hardware.security.keymint.KeyParameter;
 import android.hardware.security.keymint.SecurityLevel;
 import android.os.StrictMode;
-import android.os.SystemProperties;
 import android.security.Flags;
 import android.security.GateKeeper;
 import android.security.KeyStore2;
@@ -87,13 +86,9 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 
 import javax.crypto.SecretKey;
-
-import com.android.internal.util.crdroid.PixelPropsUtils;
-
 /**
  * A java.security.KeyStore interface for the Android KeyStore. An instance of
  * it can be created via the {@link java.security.KeyStore#getInstance(String)
@@ -116,7 +111,6 @@ import com.android.internal.util.crdroid.PixelPropsUtils;
 public class AndroidKeyStoreSpi extends KeyStoreSpi {
     public static final String TAG = "AndroidKeyStoreSpi";
     public static final String NAME = "AndroidKeyStore";
-    private static final String SPOOF_PIXEL_GMS = "persist.sys.pixelprops.gms";
 
     private KeyStore2 mKeyStore;
     private @KeyProperties.Namespace int mNamespace = KeyProperties.NAMESPACE_APPLICATION;
@@ -181,26 +175,8 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
         }
     }
 
-    private static int indexOf(byte[] array) {
-        final byte[] PATTERN = {48, 74, 4, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 10, 1, 2};
-        outer:
-        for (int i = 0; i < array.length - PATTERN.length + 1; i++) {
-            for (int j = 0; j < PATTERN.length; j++) {
-                if (array[i + j] != PATTERN[j]) {
-                    continue outer;
-                }
-            }
-            return i;
-        }
-        return -1;
-    }
-
     @Override
     public Certificate[] engineGetCertificateChain(String alias) {
-        final boolean mGmsSpoofEnabled = SystemProperties.getBoolean(SPOOF_PIXEL_GMS, true);
-        if (mGmsSpoofEnabled) {
-            PixelPropsUtils.onEngineGetCertificateChain();
-        }
 
         KeyEntryResponse response = getKeyMetadata(alias);
 
@@ -213,28 +189,15 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
             return null;
         }
 
-        X509Certificate modLeaf = leaf;
-        try {
-            byte[] bytes = leaf.getEncoded();
-            if (bytes != null && bytes.length > 0) {
-                int index = indexOf(bytes);
-                if (index != -1) {
-                    bytes[index + 38] = 1;
-                    bytes[index + 41] = 0;
-                    CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-                    X509Certificate modCert = (X509Certificate) certFactory.generateCertificate(new ByteArrayInputStream(bytes));
-                    modLeaf = modCert;
-                }
-            }
-        } catch (CertificateException e) {
-            return null;
-        }
+        final Certificate[] caList;
 
         final byte[] caBytes = response.metadata.certificateChain;
-        final Certificate[] caList;
+
         if (caBytes != null) {
             final Collection<X509Certificate> caChain = toCertificates(caBytes);
+
             caList = new Certificate[caChain.size() + 1];
+
             final Iterator<X509Certificate> it = caChain.iterator();
             int i = 1;
             while (it.hasNext()) {
@@ -243,7 +206,9 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
         } else {
             caList = new Certificate[1];
         }
-        caList[0] = mGmsSpoofEnabled ? modLeaf : leaf;
+
+        caList[0] = leaf;
+
         return caList;
     }
 

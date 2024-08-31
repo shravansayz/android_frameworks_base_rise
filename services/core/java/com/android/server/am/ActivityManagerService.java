@@ -528,6 +528,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import lineageos.providers.LineageSettings;
+
 public class ActivityManagerService extends IActivityManager.Stub
         implements Watchdog.Monitor, BatteryStatsImpl.BatteryCallback, ActivityManagerGlobalLock {
 
@@ -4468,8 +4470,17 @@ public class ActivityManagerService extends IActivityManager.Stub
             }
         }
 
-        final boolean clearPendingIntentsForStoppedApp = (android.content.pm.Flags.stayStopped()
-                && packageStateStopped);
+        boolean clearPendingIntentsForStoppedApp = false;
+        try {
+            clearPendingIntentsForStoppedApp = (packageStateStopped
+                    && android.content.pm.Flags.stayStopped());
+        } catch (IllegalStateException e) {
+            // It's unlikely for a package to be force-stopped early in the boot cycle. So, if we
+            // check for 'packageStateStopped' which should evaluate to 'false', then this should
+            // ensure we are not accessing the flag early in the boot cycle. As an additional
+            // safety measure, catch the exception and ignore to avoid causing a device restart.
+            clearPendingIntentsForStoppedApp = false;
+        }
         if (packageName == null || uninstalling || clearPendingIntentsForStoppedApp) {
             didSomething |= mPendingIntentController.removePendingIntentsForPackage(
                     packageName, userId, appId, doit);
@@ -20898,12 +20909,6 @@ public class ActivityManagerService extends IActivityManager.Stub
         mOomAdjuster.mCachedAppOptimizer.binderError(debugPid, app, code, flags, err);
     }
 
-    public boolean isSwipeToScreenshotGestureActive() {
-        synchronized (this) {
-            return SystemProperties.getBoolean("persist.sys.android.screenshot", false);
-        }
-    }
-
     @Override
     public boolean shouldForceCutoutFullscreen(String packageName) {
         return mActivityTaskManager.shouldForceCutoutFullscreen(packageName);
@@ -20913,5 +20918,12 @@ public class ActivityManagerService extends IActivityManager.Stub
         return getAppOpsManager().checkOpNoThrow(
                 AppOpsManager.OP_RUN_ANY_IN_BACKGROUND,
                 info.uid, info.packageName) != AppOpsManager.MODE_ALLOWED;
+    }
+
+    @Override
+    public boolean isThreeFingersSwipeActive() {
+        synchronized (this) {
+            return SystemProperties.getBoolean("persist.sys.android.screenshot", false);
+        }
     }
 }
