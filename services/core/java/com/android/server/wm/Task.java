@@ -2807,11 +2807,15 @@ class Task extends TaskFragment {
         if (!isRootTask && !mCreatedByOrganizer) {
             adjustBoundsForDisplayChangeIfNeeded(dc);
         }
+        final int lastDisplayId = getDisplayId();
         super.onDisplayChanged(dc);
         if (isLeafTask()) {
             final int displayId = (dc != null) ? dc.getDisplayId() : INVALID_DISPLAY;
-            mWmService.mAtmService.getTaskChangeNotificationController().notifyTaskDisplayChanged(
-                    mTaskId, displayId);
+            //Send the callback when the task reparented to another display.
+            if (lastDisplayId != displayId) {
+                mWmService.mAtmService.getTaskChangeNotificationController()
+                        .notifyTaskDisplayChanged(mTaskId, displayId);
+            }
         }
         if (isRootTask()) {
             updateSurfaceBounds();
@@ -3396,6 +3400,12 @@ class Task extends TaskFragment {
         // Let organizer manage task visibility for shell transition. So don't change it's
         // visibility during collecting.
         if (mTransitionController.isCollecting() && mCreatedByOrganizer) {
+            return;
+        }
+
+        // When the shell transition is playing, should not change the visibility of the task
+         // to avoid conflicts with the shell transition.
+        if (mTransitionController.inPlayingTargets(this)) {
             return;
         }
 

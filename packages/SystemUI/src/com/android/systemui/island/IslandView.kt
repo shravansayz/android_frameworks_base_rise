@@ -74,7 +74,7 @@ import com.android.settingslib.drawable.CircleFramedDrawable
 import kotlin.math.abs
 import kotlin.text.Regex
 import java.util.concurrent.Executors
-import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.RejectedExecutionException
 import java.util.Locale
 
@@ -107,7 +107,7 @@ class IslandView : ExtendedFloatingActionButton {
     private var telecomManager: TelecomManager? = null
     private var vibrator: Vibrator? = null
 
-    private val bgExecutor: Executor = Executors.newSingleThreadExecutor()
+    private val bgExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private val taskStackChangeListener = object : TaskStackChangeListener {
         override fun onTaskStackChanged() {
@@ -140,7 +140,9 @@ class IslandView : ExtendedFloatingActionButton {
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        cleanUpResources()
         TaskStackChangeListeners.getInstance().unregisterTaskStackListener(taskStackChangeListener)
+        bgExecutor.shutdownNow()
     }
     
     private fun updateForegroundTaskSync() {
@@ -224,10 +226,19 @@ class IslandView : ExtendedFloatingActionButton {
                 postOnAnimationDelayed({
                     if (isDismissed && !isIslandAnimating && isTouchInsetsRemoved && !isPostPoned) {
                         notificationStackScroller?.visibility = View.VISIBLE
+                        cleanUpResources()
                     }
                 }, 500L)
             }, 150L)
         })
+    }
+    
+    fun cleanUpResources() {
+        recycleBitmap((this.icon as? BitmapDrawable)?.bitmap)
+        this.icon = null
+        vibrator?.cancel()
+        vibrator = null
+        this.visibility = View.GONE
     }
 
     fun updateIslandVisibility(expandedFraction: Float) {
@@ -236,7 +247,7 @@ class IslandView : ExtendedFloatingActionButton {
             this.visibility = View.GONE
             isDismissed = true
             removeInsetsListener()
-        } else if (isIslandAnimating && expandedFraction == 0.0f) {
+        } else if (!isDismissed && isIslandAnimating && expandedFraction == 0.0f) {
             notificationStackScroller?.visibility = View.GONE
             this.visibility = View.VISIBLE
             addInsetsListener()
@@ -298,7 +309,6 @@ class IslandView : ExtendedFloatingActionButton {
         val resources = context.resources
         val bitmap = drawableToBitmap(iconDrawable)
         val roundedIcon = CircleFramedDrawable(bitmap, this.iconSize)
-        recycleBitmap((this.icon as? BitmapDrawable)?.bitmap)
         this.icon = roundedIcon
         this.iconTint = null
         this.bringToFront()
@@ -446,6 +456,7 @@ class IslandView : ExtendedFloatingActionButton {
                             translationX = 0f
                             alpha = 1f
                             isDismissed = true
+                            cleanUpResources()
                             removeHun()
                             removeInsetsListener()
                             isIslandAnimating = false
@@ -472,6 +483,7 @@ class IslandView : ExtendedFloatingActionButton {
             visibility = View.GONE
             translationX = 0f
             isDismissed = true
+            cleanUpResources()
             removeHun()
             removeInsetsListener()
             isIslandAnimating = false

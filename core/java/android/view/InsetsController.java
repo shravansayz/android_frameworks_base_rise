@@ -232,7 +232,7 @@ public class InsetsController implements WindowInsetsController, InsetsAnimation
     private static final String TAG = "InsetsController";
     private static final int ANIMATION_DURATION_MOVE_IN_MS = 275;
     private static final int ANIMATION_DURATION_MOVE_OUT_MS = 340;
-    private static final int ANIMATION_DURATION_FADE_IN_MS = 500;
+    private static final int ANIMATION_DURATION_FADE_IN_MS = 800;
     private static final int ANIMATION_DURATION_FADE_OUT_MS = 1500;
 
     /** Visible for WindowManagerWrapper */
@@ -727,28 +727,36 @@ public class InsetsController implements WindowInsetsController, InsetsAnimation
             new InsetsState.OnTraverseCallbacks() {
 
                 private @InsetsType int mTypes;
+                private InsetsState mFromState;
                 private InsetsState mToState;
 
                 @Override
                 public void onStart(InsetsState state1, InsetsState state2) {
                     mTypes = 0;
+                    mFromState = null;
                     mToState = null;
                 }
 
                 @Override
                 public void onIdMatch(InsetsSource source1, InsetsSource source2) {
-                    final @InsetsType int type = source1.getType();
-                    if ((type & Type.systemBars()) == 0
+                    final Rect frame1 = source1.getFrame();
+                    final Rect frame2 = source2.getFrame();
+                    if (!source1.hasFlags(InsetsSource.FLAG_ANIMATE_RESIZING)
+                            || !source2.hasFlags(InsetsSource.FLAG_ANIMATE_RESIZING)
                             || !source1.isVisible() || !source2.isVisible()
-                            || source1.getFrame().equals(source2.getFrame())
+                            || frame1.equals(frame2) || frame1.isEmpty() || frame2.isEmpty()
                             || !(Rect.intersects(mFrame, source1.getFrame())
                                     || Rect.intersects(mFrame, source2.getFrame()))) {
                         return;
                     }
-                    mTypes |= type;
+                    mTypes |= source1.getType();
+                    if (mFromState == null) {
+                        mFromState = new InsetsState();
+                    }
                     if (mToState == null) {
                         mToState = new InsetsState();
                     }
+                    mFromState.addSource(new InsetsSource(source1));
                     mToState.addSource(new InsetsSource(source2));
                 }
 
@@ -759,7 +767,7 @@ public class InsetsController implements WindowInsetsController, InsetsAnimation
                     }
                     cancelExistingControllers(mTypes);
                     final InsetsAnimationControlRunner runner = new InsetsResizeAnimationRunner(
-                            mFrame, state1, mToState, RESIZE_INTERPOLATOR,
+                            mFrame, mFromState, mToState, RESIZE_INTERPOLATOR,
                             ANIMATION_DURATION_RESIZE, mTypes, InsetsController.this);
                     if (mRunningAnimations.isEmpty()) {
                         mHost.notifyAnimationRunningStateChanged(true);
@@ -877,7 +885,6 @@ public class InsetsController implements WindowInsetsController, InsetsAnimation
             return false;
         }
         if (DEBUG) Log.d(TAG, "onStateChanged: " + state);
-        mLastDispatchedState.set(state, true /* copySources */);
 
         final InsetsState lastState = new InsetsState(mState, true /* copySources */);
         updateState(state);
@@ -888,10 +895,13 @@ public class InsetsController implements WindowInsetsController, InsetsAnimation
                 true /* excludesInvisibleIme */)) {
             if (DEBUG) Log.d(TAG, "onStateChanged, notifyInsetsChanged");
             mHost.notifyInsetsChanged();
-            if (lastState.getDisplayFrame().equals(mState.getDisplayFrame())) {
-                InsetsState.traverse(lastState, mState, mStartResizingAnimationIfNeeded);
+            if (mLastDispatchedState.getDisplayFrame().equals(state.getDisplayFrame())) {
+                // Here compares the raw states instead of the overridden ones because we don't want
+                // to animate an insets source that its mServerVisible is false.
+                InsetsState.traverse(mLastDispatchedState, state, mStartResizingAnimationIfNeeded);
             }
         }
+        mLastDispatchedState.set(state, true /* copySources */);
         return true;
     }
 

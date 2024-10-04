@@ -293,7 +293,7 @@ public class QsControlsView extends FrameLayout {
             mController.unregisterCallback(mMediaCallback);
             mController = null;
         }
-        cleanupAlbumArt();
+        clearMediaMetadata();
     }
 
     private void setClickListeners() {
@@ -327,10 +327,19 @@ public class QsControlsView extends FrameLayout {
         isClearingMetadata = true;
         mMediaMetadata = null;
         cleanupAlbumArt();
-        isClearingMetadata = false;
         if (mMediaPlayBtn != null) {
             mMediaPlayBtn.setImageResource(R.drawable.ic_media_play);
         }
+        if (mPlayerIcon != null) {
+            mPlayerIcon.setImageIcon(null);
+        }
+        if (mMediaTitle != null) {
+            mMediaTitle.setText(mContext.getString(R.string.no_media_playing));
+        }
+        if (mMediaArtist != null) { 
+            mMediaArtist.setText("");
+        }
+        isClearingMetadata = false;
     }
     
     private void updateMediaController() {
@@ -413,17 +422,6 @@ public class QsControlsView extends FrameLayout {
     }
 
     private void updateMediaViews() {
-        if (!isMediaPlaying()) {
-            clearMediaMetadata();
-        }
-        if (mMediaPlayBtn != null) {
-            mMediaPlayBtn.setImageResource(isMediaPlaying() ? R.drawable.ic_media_pause : R.drawable.ic_media_play);
-        }
-        CharSequence title = mMediaMetadata == null ? null : mMediaMetadata.getText(MediaMetadata.METADATA_KEY_TITLE);
-        CharSequence artist = mMediaMetadata == null ? null : mMediaMetadata.getText(MediaMetadata.METADATA_KEY_ARTIST);
-        mMediaTitle.setText(title != null ? title : mContext.getString(R.string.no_media_playing));
-        mMediaArtist.setText(artist != null ? artist : "");
-        mPlayerIcon.setImageIcon(mNotifManager == null ? null : mNotifManager.getMediaIcon());
         final int mediaItemColor = getMediaItemColor();
         for (View view : mMediaPlayerViews) {
             if (view instanceof TextView) {
@@ -432,9 +430,22 @@ public class QsControlsView extends FrameLayout {
                 ((ImageView) view).setImageTintList(ColorStateList.valueOf(mediaItemColor));
             }
         }
+        if (!isMediaPlaying()) {
+            clearMediaMetadata();
+            return;
+        }
+        if (mMediaPlayBtn != null) {
+            mMediaPlayBtn.setImageResource(isMediaPlaying() ? R.drawable.ic_media_pause : R.drawable.ic_media_play);
+        }
+        CharSequence title = mMediaMetadata == null ? null : mMediaMetadata.getText(MediaMetadata.METADATA_KEY_TITLE);
+        CharSequence artist = mMediaMetadata == null ? null : mMediaMetadata.getText(MediaMetadata.METADATA_KEY_ARTIST);
+        mMediaTitle.setText(title != null ? title : mContext.getString(R.string.no_media_playing));
+        mMediaArtist.setText(artist != null ? artist : "");
+        mPlayerIcon.setImageIcon(mNotifManager == null && mNotifManager.getMediaIcon() != null ? null : mNotifManager.getMediaIcon());
     }
 
     private class ProcessArtworkTask extends AsyncTask<Bitmap, Void, Bitmap> {
+        @Override
         protected Bitmap doInBackground(Bitmap... bitmaps) {
             Bitmap bitmap = bitmaps[0];
             if (bitmap == null || bitmap.isRecycled()) {
@@ -442,23 +453,34 @@ public class QsControlsView extends FrameLayout {
             }
             int width = mMediaAlbumArtBg.getWidth();
             int height = mMediaAlbumArtBg.getHeight();
-            return getScaledRoundedBitmap(bitmap, width, height);
+            Bitmap bitmapCopy = bitmap.copy(bitmap.getConfig(), true);
+            if (bitmapCopy == null || bitmapCopy.isRecycled()) {
+                return null;
+            }
+            return getScaledRoundedBitmap(bitmapCopy, width, height);
         }
+
+        @Override
         protected void onPostExecute(Bitmap result) {
             if (result == null) return;
-            if (mAlbumArtRef == null || mAlbumArtRef.get() != result) {
-                if (mAlbumArtRef != null) {
-                    Bitmap previousBitmap = mAlbumArtRef.get();
-                    if (previousBitmap != null && !previousBitmap.isRecycled()) {
-                        previousBitmap.recycle();
-                    }
+            if (mAlbumArtRef != null) {
+                Bitmap previousBitmap = mAlbumArtRef.get();
+                if (previousBitmap != null && !previousBitmap.isRecycled()) {
+                    previousBitmap.recycle();
                 }
-                mAlbumArtRef = new WeakReference<>(result);
-                final int mediaFadeLevel = mContext.getResources().getInteger(R.integer.media_player_fade);
-                final int fadeFilter = ColorUtils.blendARGB(Color.TRANSPARENT, mNotifManager == null ? Color.BLACK : mNotifManager.getMediaBgColor(), mediaFadeLevel / 100f);
-                mMediaAlbumArtBg.setColorFilter(fadeFilter, PorterDuff.Mode.SRC_ATOP);
-                mMediaAlbumArtBg.setImageBitmap(mAlbumArtRef.get());
             }
+            mAlbumArtRef = new WeakReference<>(result);
+            if (result.isRecycled()) {
+                return;
+            }
+            final int mediaFadeLevel = mContext.getResources().getInteger(R.integer.media_player_fade);
+            final int fadeFilter = ColorUtils.blendARGB(
+                Color.TRANSPARENT, 
+                mNotifManager == null ? Color.BLACK : mNotifManager.getMediaBgColor(), 
+                mediaFadeLevel / 100f
+            );
+            mMediaAlbumArtBg.setColorFilter(fadeFilter, PorterDuff.Mode.SRC_ATOP);
+            mMediaAlbumArtBg.setImageBitmap(result);
         }
     }
 
